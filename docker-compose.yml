@@ -1,0 +1,22 @@
+services:
+  pgvector:
+    image: pgvector/pgvector:pg17
+    container_name: rag-at-scale-pg
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag        # local-only dev database, never exposed
+      POSTGRES_DB: ragscale
+    ports:
+      - "5433:5432"                 # 5433 to avoid clashing with any local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Millions of vectors want more shared memory than the container default.
+    shm_size: 1g
+    command: >
+      postgres
+      -c shared_buffers=2GB
+      -c maintenance_work_mem=1GB
+      -c max_wal_size=4GB
+
+volumes:
+  pgdata:

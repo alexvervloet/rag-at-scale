@@ -1,0 +1,9 @@
+psycopg[binary]>=3.2
+pgvector>=0.3
+numpy>=2.0
+requests>=2.32
+python-dotenv>=1.0
+tqdm>=4.66
+pytest>=8.0
+# Optional, for phase 4 concurrency tests:
+# locust>=2.29
