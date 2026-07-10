@@ -58,7 +58,7 @@ def load_corpus(conn, n: int, fresh: bool) -> float:
         for _ in range(existing):
             next(meta)
             next(bodies)
-        for (topic, body), (_, vec) in zip(meta, embed_iter(bodies)):
+        for (topic, body), (_, vec) in zip(meta, embed_iter(bodies, input_type="document")):
             yield topic, body, vec
 
     loaded = db.bulk_load(conn, tqdm(rows(), total=to_add, unit="chunk"))
@@ -109,7 +109,7 @@ def run_point(conn, n: int, k: int, repeats: int, fresh: bool) -> None:
 
     print("\n--- exact search (no index = ground truth) ---")
     db.drop_indexes(conn)
-    qvecs = embed_batch(corpus.generate_queries(100))
+    qvecs = embed_batch(corpus.generate_queries(100), input_type="query")
     p50, p95, samples = measure_latency(conn, qvecs, k, repeats)
     print(f"exact query latency over {samples} runs: p50 {p50:.1f}ms  p95 {p95:.1f}ms")
 
@@ -133,7 +133,7 @@ def main() -> None:
         run_point(conn, n, args.k, args.repeats, fresh=args.fresh and i == 0)
 
     # A quick human sanity check on the last-loaded corpus.
-    top = db.search(conn, embed_batch([SANITY_QUERIES[0]])[0], k=3)
+    top = db.search(conn, embed_batch([SANITY_QUERIES[0]], input_type="query")[0], k=3)
     print(f"\nsanity — top hits for {SANITY_QUERIES[0]!r}:")
     for _id, body, dist in top:
         print(f"  {dist:.3f}  {body[:90]}")

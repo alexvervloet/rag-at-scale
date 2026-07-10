@@ -32,29 +32,51 @@ for pkg in ("psycopg", "pgvector", "numpy", "requests", "dotenv", "tqdm"):
 
 check("docker on PATH", shutil.which("docker") is not None, "install Docker Desktop")
 
-try:
-    from ragscale.config import EMBED_DIM, EMBED_MODEL, OLLAMA_URL
+from ragscale.config import EMBED_DIM, EMBED_PROVIDER
 
-    import requests
+check(f"embed provider: {EMBED_PROVIDER}", EMBED_PROVIDER in ("ollama", "voyage"),
+      "set EMBED_PROVIDER to 'ollama' or 'voyage'")
 
-    resp = requests.get(f"{OLLAMA_URL}/api/tags", timeout=3)
-    models = [m["name"] for m in resp.json().get("models", [])]
-    check(f"Ollama reachable at {OLLAMA_URL}", True)
-    have = any(m.split(":")[0] == EMBED_MODEL for m in models)
-    check(f"embed model pulled: {EMBED_MODEL}", have, f"ollama pull {EMBED_MODEL}")
-    if have:
-        vec = requests.post(
-            f"{OLLAMA_URL}/api/embed",
-            json={"model": EMBED_MODEL, "input": ["hello"]},
-            timeout=30,
-        ).json()["embeddings"][0]
-        check(
-            f"embedding dim {len(vec)} matches EMBED_DIM={EMBED_DIM}",
-            len(vec) == EMBED_DIM,
-            "set EMBED_DIM in .env to match the model",
-        )
-except Exception as exc:  # noqa: BLE001 — a setup checker should report, not crash
-    check("Ollama reachable", False, f"start Ollama ({exc.__class__.__name__})")
+if EMBED_PROVIDER == "voyage":
+    try:
+        from ragscale.config import VOYAGE_API_KEY, VOYAGE_MODEL
+        from ragscale.embed import embed_batch
+
+        check("VOYAGE_API_KEY set", bool(VOYAGE_API_KEY), "put VOYAGE_API_KEY in .env")
+        if VOYAGE_API_KEY:
+            vec = embed_batch(["hello"], input_type="query")[0]
+            check(f"Voyage reachable, model {VOYAGE_MODEL}", True)
+            check(
+                f"embedding dim {len(vec)} matches EMBED_DIM={EMBED_DIM}",
+                len(vec) == EMBED_DIM,
+                f"set EMBED_DIM={len(vec)} in .env to match {VOYAGE_MODEL}",
+            )
+    except Exception as exc:  # noqa: BLE001 — a setup checker should report, not crash
+        check("Voyage reachable", False, f"check VOYAGE_API_KEY / model ({exc.__class__.__name__})")
+else:
+    try:
+        from ragscale.config import EMBED_MODEL, OLLAMA_URL
+
+        import requests
+
+        resp = requests.get(f"{OLLAMA_URL}/api/tags", timeout=3)
+        models = [m["name"] for m in resp.json().get("models", [])]
+        check(f"Ollama reachable at {OLLAMA_URL}", True)
+        have = any(m.split(":")[0] == EMBED_MODEL for m in models)
+        check(f"embed model pulled: {EMBED_MODEL}", have, f"ollama pull {EMBED_MODEL}")
+        if have:
+            vec = requests.post(
+                f"{OLLAMA_URL}/api/embed",
+                json={"model": EMBED_MODEL, "input": ["hello"]},
+                timeout=30,
+            ).json()["embeddings"][0]
+            check(
+                f"embedding dim {len(vec)} matches EMBED_DIM={EMBED_DIM}",
+                len(vec) == EMBED_DIM,
+                "set EMBED_DIM in .env to match the model",
+            )
+    except Exception as exc:  # noqa: BLE001 — a setup checker should report, not crash
+        check("Ollama reachable", False, f"start Ollama ({exc.__class__.__name__})")
 
 try:
     from ragscale import db
