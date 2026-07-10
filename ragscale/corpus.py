@@ -27,7 +27,12 @@ TEMPLATES = [
 
 
 def generate(n: int, seed: int = 42) -> Iterator[tuple[str, str]]:
-    """Yield (topic, chunk_text) pairs, deterministically for a given seed."""
+    """Yield (topic, chunk_text) pairs, deterministically for a given seed.
+
+    Prefix-consistent: row i is identical regardless of n, so growing the corpus
+    (100k → 500k → …) only ever appends new rows — the harness embeds each chunk
+    exactly once across the whole phase-1 sweep.
+    """
     rng = random.Random(seed)
     topics = list(TOPICS)
     for i in range(n):
@@ -38,3 +43,29 @@ def generate(n: int, seed: int = 42) -> Iterator[tuple[str, str]]:
         # The index i keeps every chunk unique so exact-duplicate vectors don't
         # flatter recall numbers.
         yield topic, f"[{topic} note {i}] " + template.format(a=a, b=b)
+
+
+# Question-style templates, deliberately distinct from the statement-style
+# TEMPLATES above so a generated query is never a verbatim corpus row — the
+# queries are genuinely held out.
+QUERY_TEMPLATES = [
+    "how do I fix {a} problems that also affect {b}?",
+    "why does {a} keep failing after I change {b}?",
+    "what is the limit on {a} and how does {b} change it?",
+    "my {a} stopped working, is it related to {b}?",
+    "can I recover {a} when {b} is misconfigured?",
+    "steps to troubleshoot {a} when {b} looks wrong?",
+]
+
+
+def generate_queries(n: int = 100, seed: int = 1234) -> list[str]:
+    """Deterministic held-out query set — the same 100 questions every run, so
+    phase 1's exact results and later phases' indexed results are comparable."""
+    rng = random.Random(seed)
+    topics = list(TOPICS)
+    out = []
+    for i in range(n):
+        topic = topics[i % len(topics)]
+        a, b = rng.sample(TOPICS[topic], 2)
+        out.append(rng.choice(QUERY_TEMPLATES).format(a=a, b=b))
+    return out
