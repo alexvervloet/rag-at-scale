@@ -5,8 +5,8 @@ Every phase ends with numbers in a table, not a feeling. Keep raw outputs in
 
 ## Phase 0 — plumbing (done when the smoke run passes)
 
-- [ ] `python check_setup.py` all green
-- [ ] `python -m ragscale.bench --n 1000` completes: generate → embed → load → query
+- [x] `python check_setup.py` all green
+- [x] `python -m ragscale.bench --n 1000` completes: generate → embed → load → query
 
 ## Phase 1 — brute force baseline (done when the table is full)
 
