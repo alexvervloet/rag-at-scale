@@ -11,9 +11,17 @@ latency, index build time, and memory, across brute force vs IVFFlat vs HNSW,
 as the corpus grows. See [PLAN.md](PLAN.md) for the phases and the results
 tables to fill in.
 
-**Cost: $0.** Embeddings come from a local model (`nomic-embed-text` via
-Ollama), the database is pgvector in Docker, and everything runs on this
-machine. No API key is used anywhere in this repo.
+**Two embedding paths.** The database is always pgvector in Docker on this
+machine. For embeddings you pick a provider with `EMBED_PROVIDER`:
+
+- **`ollama`** — local `nomic-embed-text`, **$0**, no API key, but compute-bound
+  at ~165 chunks/s (millions of chunks = hours).
+- **`voyage`** — hosted Voyage API, many concurrent batched requests, dramatically
+  faster. Needs a `VOYAGE_API_KEY`, but the full 5M-vector sweep (~140M tokens)
+  fits inside Voyage's free token tier, so it stays ~$0 in practice.
+
+pgvector doesn't care where the vectors come from, so the scaling results are the
+same either way — Voyage just buys back the embedding hours.
 
 ## Quickstart
 
@@ -22,7 +30,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env               # defaults work out of the box
 docker compose up -d               # pgvector on localhost:5433
-python check_setup.py              # verifies Docker, Postgres, Ollama, model
+python check_setup.py              # verifies Docker, Postgres, and the embedding provider
 
 # End-to-end smoke run at tiny scale (1k synthetic chunks):
 python -m ragscale.bench --n 1000
