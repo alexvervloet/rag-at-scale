@@ -25,3 +25,7 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 # Voyage (hosted) provider
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 VOYAGE_MODEL = os.getenv("VOYAGE_MODEL", "voyage-4")
+
+# Concurrency knobs (0 = use the provider default). Tunable without code edits.
+EMBED_BATCH = int(os.getenv("EMBED_BATCH", "0"))
+EMBED_WORKERS = int(os.getenv("EMBED_WORKERS", "0"))

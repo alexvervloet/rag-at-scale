@@ -17,8 +17,10 @@ from itertools import islice
 import requests
 
 from .config import (
+    EMBED_BATCH,
     EMBED_MODEL,
     EMBED_PROVIDER,
+    EMBED_WORKERS,
     OLLAMA_URL,
     VOYAGE_API_KEY,
     VOYAGE_MODEL,
@@ -74,8 +76,8 @@ def embed_iter(texts, batch_size: int | None = None, workers: int | None = None,
     (a single local server is compute-bound — concurrency wouldn't help).
     """
     is_voyage = EMBED_PROVIDER == "voyage"
-    batch_size = batch_size or (128 if is_voyage else 64)
-    workers = workers or (8 if is_voyage else 1)
+    batch_size = batch_size or EMBED_BATCH or (128 if is_voyage else 64)
+    workers = workers or EMBED_WORKERS or (8 if is_voyage else 1)
     it = iter(texts)
 
     if workers == 1:
