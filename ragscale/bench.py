@@ -67,21 +67,28 @@ def load_corpus(conn, n: int, fresh: bool) -> float:
     return dt
 
 
-def exact_topk(conn, qvecs, k: int) -> list[list[int]]:
-    """Ground truth: exact top-k ids for each query (no index = sequential scan)."""
-    return [[row[0] for row in db.search(conn, qv, k=k)] for qv in qvecs]
+def bench_exact(conn, qvecs, k: int, repeats: int):
+    """Measure latency AND capture the exact top-k ids in one pass.
 
+    A brute-force scan at 5M is ~seconds per query, so scanning the table a
+    second time just to record ground truth would double the phase's wall time.
+    Results are deterministic, so we keep each query's ids from the first repeat
+    while still timing every repeat.
 
-def measure_latency(conn, qvecs, k: int, repeats: int) -> tuple[float, float, int]:
+    Returns (p50_ms, p95_ms, n_samples, ground_truth).
+    """
     db.search(conn, qvecs[0], k=k)  # warm up caches before timing
     latencies = []
-    for _ in range(repeats):
-        for qv in qvecs:
+    ground_truth: list[list[int]] = [[] for _ in qvecs]
+    for r in range(repeats):
+        for i, qv in enumerate(qvecs):
             t0 = time.perf_counter()
-            db.search(conn, qv, k=k)
+            rows = db.search(conn, qv, k=k)
             latencies.append((time.perf_counter() - t0) * 1000)
+            if r == 0:
+                ground_truth[i] = [row[0] for row in rows]
     arr = np.array(latencies)
-    return float(np.percentile(arr, 50)), float(np.percentile(arr, 95)), len(latencies)
+    return float(np.percentile(arr, 50)), float(np.percentile(arr, 95)), len(latencies), ground_truth
 
 
 def record(n: int, load_s: float, size: str, p50: float, p95: float, ground_truth) -> None:
@@ -110,10 +117,9 @@ def run_point(conn, n: int, k: int, repeats: int, fresh: bool) -> None:
     print("\n--- exact search (no index = ground truth) ---")
     db.drop_indexes(conn)
     qvecs = embed_batch(corpus.generate_queries(100), input_type="query")
-    p50, p95, samples = measure_latency(conn, qvecs, k, repeats)
+    p50, p95, samples, ground_truth = bench_exact(conn, qvecs, k, repeats)
     print(f"exact query latency over {samples} runs: p50 {p50:.1f}ms  p95 {p95:.1f}ms")
 
-    ground_truth = exact_topk(conn, qvecs, k)
     record(actual, load_s, size, p50, p95, ground_truth)
 
 
