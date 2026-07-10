@@ -15,7 +15,7 @@ search. This is ground truth for every later recall number.
 
 | N vectors | load time | table size | p50 query | p95 query |
 |---|---|---|---|---|
-| 100k | | | | |
+| 100k | 604s | 413 MB | 91ms | 97ms |
 | 500k | | | | |
 | 1M | | | | |
 | 5M | | | | |
@@ -54,3 +54,13 @@ matched recall (e.g. everything tuned to recall@10 ≈ 0.95).
 ## Notes / gotchas discovered along the way
 
 (keep a running log here — this becomes the best part of the write-up)
+
+- **Load time is embedding, not pgvector.** Ingest runs at ~165 chunks/s, fully
+  bottlenecked by local Ollama (`nomic-embed-text`), so the "load time" column is
+  really a corpus-prep cost, not a database ingest number. Practical consequence:
+  5M rows is ~8.4h of embedding. The harness grows the table in place across N
+  (100k → 500k → …) so each chunk is embedded exactly once over the whole sweep.
+- **Extrapolating from tiny N lies.** Sub-10k latencies (~3–8ms) are dominated by
+  fixed query overhead, not the scan. The first real anchor is 100k @ 91ms p50 →
+  ~0.9ms per 1k rows, which puts the ~200ms "too slow for chat" crossing around
+  ~220k. Confirm with the 500k point.
