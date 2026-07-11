@@ -90,6 +90,11 @@ def main() -> None:
     # IVFFlat's k-means needs more working memory than the server default at this
     # scale; raise it for this session (build-time only, does not affect queries).
     conn.execute(f"SET maintenance_work_mem = '{args.maintenance_mem}'")
+    # Force the index. pgvector's IVFFlat cost estimate grows with probes; past a
+    # threshold the planner picks a parallel seq scan (brute force, ~14s at 5M)
+    # instead of the index — so without this we'd measure the fallback, not IVFFlat.
+    # The fallback itself is a real gotcha (see LESSONS); here we characterize the index.
+    conn.execute("SET enable_seqscan = off")
     n = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
     truth = load_ground_truth(n)
     qvecs = embed_batch(corpus.generate_queries(100), input_type="query")
