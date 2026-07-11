@@ -9,6 +9,8 @@ real corpus (e.g. a Wikipedia slice) for the write-up.
 import random
 from collections.abc import Iterator
 
+from .config import CORPUS_SOURCE
+
 TOPICS = {
     "billing": ["invoice", "refund", "proration", "credit card", "tax", "receipt"],
     "auth": ["password", "two-factor", "session", "SSO", "recovery code", "login"],
@@ -33,6 +35,10 @@ def generate(n: int, seed: int = 42) -> Iterator[tuple[str, str]]:
     (100k → 500k → …) only ever appends new rows — the harness embeds each chunk
     exactly once across the whole phase-1 sweep.
     """
+    if CORPUS_SOURCE == "wiki":
+        from . import corpus_wiki
+        yield from corpus_wiki.generate(n, seed)
+        return
     rng = random.Random(seed)
     topics = list(TOPICS)
     for i in range(n):
@@ -61,6 +67,9 @@ QUERY_TEMPLATES = [
 def generate_queries(n: int = 100, seed: int = 1234) -> list[str]:
     """Deterministic held-out query set — the same 100 questions every run, so
     phase 1's exact results and later phases' indexed results are comparable."""
+    if CORPUS_SOURCE == "wiki":
+        from . import corpus_wiki
+        return corpus_wiki.generate_queries(n, seed)
     rng = random.Random(seed)
     topics = list(TOPICS)
     out = []

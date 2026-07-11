@@ -22,6 +22,7 @@ import numpy as np
 from tqdm import tqdm
 
 from . import corpus, db
+from .config import CORPUS_SOURCE
 from .embed import embed_batch, embed_iter
 
 RESULTS_DIR = "results"
@@ -93,14 +94,14 @@ def bench_exact(conn, qvecs, k: int, repeats: int):
 
 def record(n: int, load_s: float, size: str, p50: float, p95: float, ground_truth) -> None:
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    csv_path = os.path.join(RESULTS_DIR, "phase1.csv")
+    csv_path = os.path.join(RESULTS_DIR, f"phase1_{CORPUS_SOURCE}.csv")
     is_new = not os.path.exists(csv_path)
     with open(csv_path, "a") as f:
         if is_new:
             f.write("n,load_s,table_size,p50_ms,p95_ms\n")
         f.write(f"{n},{load_s:.1f},{size},{p50:.2f},{p95:.2f}\n")
 
-    with open(os.path.join(RESULTS_DIR, f"ground_truth_{n}.json"), "w") as f:
+    with open(os.path.join(RESULTS_DIR, f"ground_truth_{CORPUS_SOURCE}_{n}.json"), "w") as f:
         json.dump({"n": n, "queries": ground_truth}, f)
 
     print(f"\nPLAN.md row → | {n} | {load_s:.1f}s | {size} | {p50:.1f}ms | {p95:.1f}ms |")

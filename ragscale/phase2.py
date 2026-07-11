@@ -20,13 +20,14 @@ import time
 import numpy as np
 
 from . import corpus, db
+from .config import CORPUS_SOURCE
 from .embed import embed_batch
 
 RESULTS_DIR = "results"
 
 
 def load_ground_truth(n: int) -> list[list[int]]:
-    with open(os.path.join(RESULTS_DIR, f"ground_truth_{n}.json")) as f:
+    with open(os.path.join(RESULTS_DIR, f"ground_truth_{CORPUS_SOURCE}_{n}.json")) as f:
         return json.load(f)["queries"]
 
 
@@ -58,9 +59,9 @@ def measure(conn, qvecs, k: int, repeats: int):
     return float(np.percentile(arr, 50)), float(np.percentile(arr, 95)), ids
 
 
-def record(row: dict, csv_name: str = "phase2.csv") -> None:
+def record(row: dict, csv_name: str = None) -> None:
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    path = os.path.join(RESULTS_DIR, csv_name)
+    path = os.path.join(RESULTS_DIR, csv_name or f"phase2_{CORPUS_SOURCE}.csv")
     is_new = not os.path.exists(path)
     cols = ["n", "lists", "probes", "recall_at_10", "p50_ms", "p95_ms", "build_s", "index_size"]
     with open(path, "a") as f:

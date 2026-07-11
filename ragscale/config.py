@@ -15,6 +15,10 @@ load_dotenv()
 
 PG_DSN = os.getenv("PG_DSN", "postgresql://rag:rag@localhost:5433/ragscale")
 
+# Corpus: "synthetic" (deterministic generator) or "wiki" (real wikitext-103).
+# Real data is required for an honest ANN comparison — see LESSONS #11.
+CORPUS_SOURCE = os.getenv("CORPUS_SOURCE", "synthetic")
+
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "ollama")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 
