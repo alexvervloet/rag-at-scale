@@ -263,6 +263,12 @@ corpus that fundamentally can't support the comparison. The right move is to fix
 the input — swap in a real corpus with realistic neighborhood structure — and only
 then compare algorithms.
 
+And it paid off, cleanly: rerun on real Wikipedia (wikitext-103, 500k), the same
+default-ish HNSW hit **0.95 recall at ~1.5 ms**, beating IVFFlat's ~16 ms at
+matched recall by ~10× — the textbook ordering, and the exact inverse of the
+synthetic verdict. Same code, same knobs, honest data: the ranking flipped back.
+That is the proof that the corpus, not the algorithm, had been doing the talking.
+
 Takeaway: a benchmark's data can decide its winner. If a well-regarded method posts
 absurd numbers, suspect the corpus before the method — and a diagnostic that
 separates "wrong answer" from "different-but-equivalent answer" (compare by
