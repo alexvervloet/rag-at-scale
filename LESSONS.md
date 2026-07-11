@@ -110,3 +110,33 @@ When you extrapolate a scaling curve, ask where it crosses each memory boundary,
 not just how it grows in the fast region. (And it reframes phases 2–3: an ANN
 index earns its keep partly by keeping the *working set* small enough to stay in
 memory — index size can matter as much as index algorithm.)
+
+## 7. Building an index is a different resource regime than querying it
+
+The very first IVFFlat build in phase 2 failed instantly:
+`ProgramLimitExceeded: memory required is 1438 MB, maintenance_work_mem is
+1024 MB`. Nothing about the *data* had changed — the 5M rows had loaded and
+queried fine — but the build has its own appetite. IVFFlat's k-means samples on
+the order of `lists × 50` vectors and needs working memory that scales with the
+index parameters (`lists`) and the dimension, not with how much RAM the queries
+use. And `maintenance_work_mem` is a *separate* knob from the query-path memory
+(`shared_buffers`, `work_mem`); the 1 GB we'd set was sized for the data, not for
+clustering 5M × 1024-d into a few thousand cells. The fix is a one-line,
+build-time-only bump (`SET maintenance_work_mem = '4GB'`), and the requirement
+grows with `lists` — the same knob that will make the sweep's bigger builds cost
+even more.
+
+Two things kept this cheap, and both generalize. First: **it failed loudly and
+immediately**, with the exact numbers (needed vs. available) in the message — so
+the fix was arithmetic, not a debugging session. A build that instead ran 20
+minutes and then OOM-killed the server would have been far worse; a clear
+resource error up front is a gift. Second: **I probed a single build before
+launching the three-build sweep.** The failure surfaced in seconds against one
+`lists` value, not partway through a long multi-build run — the same
+anchor-before-you-commit discipline from §2, applied to an expensive operation
+instead of a measurement.
+
+Takeaway: an index build's cost model (memory *and* time) is its own thing, keyed
+to the index parameters, and defaults that suit the data will not automatically
+suit the build. Size the build knobs to `(rows, dim, index params)` deliberately —
+and dry-run one build before sweeping many.
