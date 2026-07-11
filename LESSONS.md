@@ -140,3 +140,71 @@ Takeaway: an index build's cost model (memory *and* time) is its own thing, keye
 to the index parameters, and defaults that suit the data will not automatically
 suit the build. Size the build knobs to `(rows, dim, index params)` deliberately —
 and dry-run one build before sweeping many.
+
+## 8. Synthetic data makes approximate search look easy — recall is only as honest as the vector geometry
+
+The phase-2 IVFFlat sweep produced a suspiciously beautiful result: at lists=1000
+recall@10 hit **1.000 at just probes=5** (scanning 0.5% of the clusters), and even
+probes=1 gave 0.855. The recall curve barely has a slope — it saturates almost
+immediately at every `lists` value. That is not IVFFlat being magic; it's the
+synthetic corpus giving the game away. Five topics, a handful of templates, and a
+seeded generator produce vectors that sit in a few tight, well-separated clumps —
+exactly the geometry IVFFlat's cluster-then-probe design handles best. On data
+this clusterable, "nearest cell" almost always contains the true neighbors, so
+`probes` tuning has nothing to do.
+
+Real corpora don't look like that. Wikipedia paragraphs (the phase-4 swap) spread
+across a high-dimensional manifold with fuzzy, overlapping neighborhoods, where the
+true top-k routinely straddles several cells and recall climbs *gradually* with
+probes — which is the whole point of the knob. So the phase-2 numbers are honest
+about *latency* (a scan is a scan) but flatter *recall*: they show the mechanism
+works, not how hard the accuracy/speed tradeoff actually bites.
+
+Takeaway: an ANN benchmark inherits the geometry of its vectors. Synthetic,
+strongly-clustered data measures the index's best case and hides the regime where
+tuning earns its keep. Validate recall claims on data with realistic neighborhood
+structure before trusting the curve — and be explicit about which numbers the
+synthetic stand-in can and cannot speak to.
+
+## 9. Once the working set exceeds RAM, you are benchmarking the page cache, not the index
+
+Two rows in the first sweep came back at ~13–14 seconds — sitting among neighbors
+of 40–760 ms, and suspiciously close to the 14.3 s brute-force time. They weren't
+real: the IVFFlat index is **38 GB — larger than the 27 GB table it indexes** — and
+with only 16 GB of RAM in the VM, neither fits in cache. A single warmup query
+left later batches reading cold pages off disk whenever a background checkpoint or
+autovacuum evicted the index, so a whole 100-query batch would degrade to
+disk-scan speed. The fix was to warm the *entire* query set before timing;
+re-measured, those points fell to tens of milliseconds and the curve became
+monotonic.
+
+Two things generalize. First, the surprise that **an ANN index can be bigger than
+the base table** — pgvector stores every vector again inside the index, with page
+overhead — so capacity planning must budget table + index(es) + build temp, not
+just the data (this is what forced the mid-experiment disk bump from 60 GB to
+150 GB). Second, and sharper: when the hot structure doesn't fit in memory, a
+latency benchmark measures *cache state* as much as algorithm, and cache state is
+nondeterministic across runs. You have to decide which number you want — warm-cache
+steady state (warm deliberately and report it) or cold-cache worst case (measure it
+on purpose) — because the average of "whatever the cache happened to hold" is just
+noise wearing a decimal point.
+
+Takeaway: above the memory line, control the cache explicitly or your latency
+numbers are a coin flip. And size storage for indexes, which can exceed the table.
+
+## 10. Index knobs trade on different cost axes — and the rule of thumb sits at the knee
+
+Sweeping `lists` at 5M made the tradeoff concrete. More lists means smaller, finer
+cells: query latency at matched recall dropped (recall-1.0 latency went 68 ms →
+47 ms → 41 ms across lists = 1000 → 2236 → 5000), but build time went the other way
+and *harder* — 10.5 min → 21 min → 49 min. The two knobs don't live on the same
+axis: `lists` is paid mostly at build time (k-means over the whole corpus),
+`probes` mostly at query time (cells scanned per query). And the classic
+`lists ≈ sqrt(N)` (2236 at 5M) landed right at the knee: it got essentially all the
+query-latency benefit (47 ms), while pushing on to `N/1000` (5000) shaved a mere
+6 ms off queries for **more than double** the build time — a plainly bad trade.
+
+Takeaway: don't tune index parameters as if they share one cost. Separate the
+build-time knobs from the query-time knobs, measure each on its own axis, and note
+that the well-known heuristic is usually a knee, not a magic value — worth beating
+only when one axis is far cheaper than the other for your workload.
