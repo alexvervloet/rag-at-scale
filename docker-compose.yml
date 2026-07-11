@@ -11,7 +11,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Millions of vectors want more shared memory than the container default.
-    shm_size: 1g
+    # Parallel HNSW builds allocate a dynamic-shared-memory segment sized to
+    # maintenance_work_mem (we use 8GB at 5M), backed by /dev/shm — so this must
+    # exceed that or CREATE INDEX fails with "No space left on device" on /dev/shm.
+    shm_size: 12g
     command: >
       postgres
       -c shared_buffers=2GB
