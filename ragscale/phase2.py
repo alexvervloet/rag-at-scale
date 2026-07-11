@@ -69,9 +69,9 @@ def main() -> None:
     parser.add_argument("--probes", type=str, default="1,5,10,20,50,100")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=3, help="loops of the 100 queries for latency")
-    parser.add_argument("--maintenance-mem", type=str, default="4GB",
-                        help="maintenance_work_mem for the build; IVFFlat k-means needs "
-                             "~1.4GB at lists=2236 / ~3GB at lists=5000 for 5M×1024d")
+    parser.add_argument("--maintenance-mem", type=str, default="8GB",
+                        help="maintenance_work_mem for the build; measured need at 5M×1024d: "
+                             "~1.4GB at lists=2236, ~5.9GB at lists=5000")
     args = parser.parse_args()
 
     lists_vals = [int(x) for x in args.lists.split(",")]
