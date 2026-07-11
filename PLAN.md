@@ -13,15 +13,24 @@ Every phase ends with numbers in a table, not a feeling. Keep raw outputs in
 Load N chunks, run 100 held-out queries with exact (sequential-scan) cosine
 search. This is ground truth for every later recall number.
 
-| N vectors | load time | table size | p50 query | p95 query |
-|---|---|---|---|---|
-| 100k | 604s | 413 MB | 91ms | 97ms |
-| 500k | | | | |
-| 1M | | | | |
-| 5M | | | | |
+Embeddings: **Voyage `voyage-4`, 1024-d** (asymmetric: corpus=document,
+queries=query). Load time is the *incremental* embed+COPY for that step (the
+table is grown in place), not a from-scratch load — cumulative embed to 5M was
+~47 min. Query latency is p50/p95 over the 100 held-out queries.
 
-Expected shape: query latency grows ~linearly with N. Find where it crosses
-"too slow for a chat app" (~200ms?) — that's the motivation for phase 2.
+| N vectors | load time (step) | table size | p50 query | p95 query |
+|---|---|---|---|---|
+| 100k | 57s | 546 MB | 110ms | 119ms |
+| 500k | 220s | 2.7 GB | 779ms | 828ms |
+| 1M | 277s | 5.3 GB | 1482ms | 1554ms |
+| 5M | ~2290s | 27 GB | 14308ms | 16586ms |
+
+Result: latency crosses the ~200ms "too slow for a chat app" line around
+**~180k** vectors — brute force is done as a primary retrieval path well before
+1M. And it's worse than linear: 1M→5M is 5× the data but **9.7× the latency**,
+because at 27 GB the table no longer fits in RAM/`shared_buffers` and every query
+reads from disk. That memory cliff — not just O(n) scan cost — is the real
+motivation for the ANN indexes in phase 2.
 
 ## Phase 2 — IVFFlat (done when the recall/latency curve exists)
 
@@ -55,12 +64,21 @@ matched recall (e.g. everything tuned to recall@10 ≈ 0.95).
 
 (keep a running log here — this becomes the best part of the write-up)
 
-- **Load time is embedding, not pgvector.** Ingest runs at ~165 chunks/s, fully
-  bottlenecked by local Ollama (`nomic-embed-text`), so the "load time" column is
-  really a corpus-prep cost, not a database ingest number. Practical consequence:
-  5M rows is ~8.4h of embedding. The harness grows the table in place across N
-  (100k → 500k → …) so each chunk is embedded exactly once over the whole sweep.
+- **Load time is embedding, not pgvector.** Ingest is bottlenecked by the
+  embedder, not the database, so the "load time" column is really a corpus-prep
+  cost. Local Ollama (`nomic-embed-text`) did ~165 chunks/s → 5M would be ~8.4h;
+  we switched to Voyage (`voyage-4`, concurrent batches) at ~1800 chunks/s → ~46
+  min. The harness grows the table in place across N so each chunk is embedded
+  exactly once over the whole sweep.
 - **Extrapolating from tiny N lies.** Sub-10k latencies (~3–8ms) are dominated by
-  fixed query overhead, not the scan. The first real anchor is 100k @ 91ms p50 →
-  ~0.9ms per 1k rows, which puts the ~200ms "too slow for chat" crossing around
-  ~220k. Confirm with the 500k point.
+  fixed query overhead, not the scan. On 768-d nomic the 100k anchor (91ms) put
+  the ~200ms crossing near ~220k; on the final 1024-d Voyage run the 100k anchor
+  is 110ms (1024-d costs more per distance), moving the real crossing to **~180k**.
+  Lesson holds: get one real-scale anchor before drawing the curve.
+- **Brute force hits a memory cliff, not just an O(n) wall.** Latency is roughly
+  linear while the table fits in RAM (100k→1M), then goes super-linear: 1M→5M is
+  5× the rows but 9.7× the latency (1.48s → 14.3s), because at 27 GB the table
+  exceeds `shared_buffers`/page cache and every query reads from disk (`IO` wait,
+  scanned across parallel workers). The knee is where the working set stops
+  fitting in memory — worth remembering when phase 2/3 index *sizes* start to
+  matter as much as their algorithms.
