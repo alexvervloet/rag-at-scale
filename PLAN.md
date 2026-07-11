@@ -92,17 +92,59 @@ rows in the first sweep — see LESSONS #9.)
 
 ## Phase 3 — HNSW (done when the comparison table exists)
 
-Same sweep with HNSW (`m`, `ef_construction` at build; `ef_search` at query).
+**Corpus switched to real data here.** The synthetic corpus (dense near-duplicate
+geometry) broke the ANN-vs-ANN comparison: it gave IVFFlat recall 1.0 trivially but
+capped HNSW at 0.77 even at ef_search=1000, because HNSW's greedy graph walk gets
+trapped among near-tied vectors — inverting the real-world ranking (LESSONS #11).
+So phases 3's comparison runs on **real Wikipedia (wikitext-103), 500k chunks,
+voyage-4 1024-d** (`CORPUS_SOURCE=wiki`), where neighborhoods are genuinely spread
+out (top-10 distance spread ~0.06 vs synthetic's ~0.001) and every method's recall
+climbs gradually — the honest tradeoff.
 
-| m | ef_search | recall@10 | p50 | p95 | build time | index size |
-|---|---|---|---|---|---|---|
+HNSW sweep (`m`, `ef_construction` at build; `ef_search` at query), index forced:
 
-Then the headline table: brute force vs IVFFlat vs HNSW at 1M and 5M, at
-matched recall (e.g. everything tuned to recall@10 ≈ 0.95).
+| m | ef_construction | ef_search | recall@10 | p50 | p95 | build | index |
+|---|---|---|---|---|---|---|---|
+| 16 | 64 | 10 | 0.779 | 0.8ms | 1.2ms | 144s | 3906 MB |
+| 16 | 64 | 40 | 0.927 | 1.3ms | 1.9ms | 144s | 3906 MB |
+| 16 | 64 | 100 | 0.975 | 1.9ms | 3.1ms | 144s | 3906 MB |
+| 16 | 64 | 200 | 0.986 | 3.2ms | 4.9ms | 144s | 3906 MB |
+| 16 | 200 | 40 | 0.949 | 1.5ms | 2.2ms | 381s | 3906 MB |
+| 16 | 200 | 200 | 0.992 | 3.9ms | 6.1ms | 381s | 3906 MB |
+| 32 | 64 | 40 | 0.965 | 1.7ms | 2.9ms | 252s | 3906 MB |
+| 32 | 200 | 40 | 0.976 | 1.8ms | 2.9ms | 594s | 3906 MB |
+| 32 | 200 | 200 | 0.995 | 5.3ms | 9.0ms | 594s | 3906 MB |
+
+Higher `m`/`ef_construction` lift the recall ceiling and the recall-per-ef_search
+(m=32,efc=200 reaches 0.95 by ef_search=40), at a steeper build cost (144s → 594s).
+`ef_search` is the query knob, trading recall for latency along each curve.
+
+### Headline — brute force vs IVFFlat vs HNSW at recall@10 ≈ 0.95 (500k real)
+
+| method | config @ ~0.95 recall | recall@10 | p50 | vs brute | index build |
+|---|---|---|---|---|---|
+| brute force | (exact seq scan) | 1.000 | 889ms | 1× | — |
+| IVFFlat | lists=707, probes=20 | 0.955 | 16.2ms | **55×** | 72s |
+| HNSW | m=16, efc=200, ef_search=40 | 0.949 | 1.5ms | **~600×** | 381s |
+
+**The result the synthetic data hid:** HNSW wins decisively — ~1.5ms at 0.95 recall,
+~10× faster than IVFFlat and ~600× faster than brute force, for a comparable index
+size (~3.9 GB) but a slower build. This is the textbook ordering (HNSW ≥ IVFFlat on
+the recall/latency frontier) — and the *exact opposite* of what the synthetic corpus
+"proved" (where HNSW couldn't clear 0.77). The tradeoff HNSW asks for is build time
+and a fixed graph (no cheap rebuilds); IVFFlat builds far faster and is easier to
+tune, which is its own kind of win.
+
+(Scale note: the comparison ran at 500k real rather than 5M — validity needs real
+geometry, not raw scale, and real embeddings are token-throughput-bound to embed.
+Phases 1–2's 5M synthetic tables still stand for the brute-force cliff and the
+IVFFlat mechanics; the 5M-vs-500k gap is a scale caveat, not a different conclusion.)
 
 ## Phase 4 — make it a story (the write-up)
 
-- [ ] Swap synthetic corpus for a Wikipedia slice; re-verify one table
+- [x] Swap synthetic corpus for a Wikipedia slice; re-verify one table
+      (done early in phase 3 — the synthetic geometry broke the ANN comparison,
+      so the IVFFlat/HNSW head-to-head was rerun on real wikitext-103 @ 500k)
 - [ ] Concurrency: 10/50 simultaneous queries (locust or asyncio) — does p95 hold?
 - [ ] Write "RAG at 5M documents — what actually breaks" with the tables and
       one graph per phase
