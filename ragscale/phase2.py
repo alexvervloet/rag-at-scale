@@ -37,8 +37,14 @@ def recall_at_k(got: list[list[int]], truth: list[list[int]], k: int) -> float:
 
 
 def measure(conn, qvecs, k: int, repeats: int):
-    """Return (p50_ms, p95_ms, topk_ids). Ids captured on the first repeat."""
-    db.search(conn, qvecs[0], k=k)  # warm up
+    """Return (p50_ms, p95_ms, topk_ids). Ids captured on the first repeat.
+
+    At 5M the index (38 GB) exceeds RAM, so a single warmup query isn't enough —
+    a batch can hit cold pages and spike to ~seconds. Warm the *whole* query set
+    first so we measure representative warm-cache latency, not cache misses.
+    """
+    for qv in qvecs:
+        db.search(conn, qv, k=k)  # full warmup pass over every query's cells
     latencies = []
     ids: list[list[int]] = [[] for _ in qvecs]
     for r in range(repeats):
@@ -72,6 +78,9 @@ def main() -> None:
     parser.add_argument("--maintenance-mem", type=str, default="8GB",
                         help="maintenance_work_mem for the build; measured need at 5M×1024d: "
                              "~1.4GB at lists=2236, ~5.9GB at lists=5000")
+    parser.add_argument("--measure-only", action="store_true",
+                        help="skip the build and measure the existing index (re-measure "
+                             "without a costly rebuild); pass the live index's --lists as the label")
     args = parser.parse_args()
 
     lists_vals = [int(x) for x in args.lists.split(",")]
@@ -87,13 +96,16 @@ def main() -> None:
     print(f"phase 2: IVFFlat on {n} vectors, {len(truth)} queries, k={args.k}\n")
 
     for lists in lists_vals:
-        t0 = time.perf_counter()
-        db.create_ivfflat(conn, lists)
-        build_s = time.perf_counter() - t0
+        if args.measure_only:
+            build_s = 0.0  # not rebuilt; caller carries the known build time
+        else:
+            t0 = time.perf_counter()
+            db.create_ivfflat(conn, lists)
+            build_s = time.perf_counter() - t0
         size = conn.execute(
             "SELECT pg_size_pretty(pg_relation_size('chunks_ivfflat'))"
         ).fetchone()[0]
-        print(f"lists={lists}: built in {build_s:.1f}s, index {size}")
+        print(f"lists={lists}: {'(existing)' if args.measure_only else f'built in {build_s:.1f}s'}, index {size}")
 
         for probes in probes_vals:
             if probes > lists:
