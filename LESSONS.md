@@ -166,31 +166,44 @@ tuning earns its keep. Validate recall claims on data with realistic neighborhoo
 structure before trusting the curve — and be explicit about which numbers the
 synthetic stand-in can and cannot speak to.
 
-## 9. Once the working set exceeds RAM, you are benchmarking the page cache, not the index
+## 9. When a number looks wrong, read the query plan before you invent a cause
 
-Two rows in the first sweep came back at ~13–14 seconds — sitting among neighbors
-of 40–760 ms, and suspiciously close to the 14.3 s brute-force time. They weren't
-real: the IVFFlat index is **38 GB — larger than the 27 GB table it indexes** — and
-with only 16 GB of RAM in the VM, neither fits in cache. A single warmup query
-left later batches reading cold pages off disk whenever a background checkpoint or
-autovacuum evicted the index, so a whole 100-query batch would degrade to
-disk-scan speed. The fix was to warm the *entire* query set before timing;
-re-measured, those points fell to tens of milliseconds and the curve became
-monotonic.
+Two rows in the first sweep came back at ~13–14 seconds, sitting among neighbors of
+40–760 ms and suspiciously close to the 14.3 s brute-force time. I had a tidy
+explanation ready: the IVFFlat index is 38 GB, bigger than RAM, so a background
+checkpoint must have evicted it and those batches read cold pages off disk. It was
+plausible, it fit the "memory cliff" story from §6, and when I warmed the whole
+query set the *fast* rows dropped a little — which felt like confirmation. So I
+wrote it down as a cache-eviction artifact.
 
-Two things generalize. First, the surprise that **an ANN index can be bigger than
-the base table** — pgvector stores every vector again inside the index, with page
-overhead — so capacity planning must budget table + index(es) + build temp, not
-just the data (this is what forced the mid-experiment disk bump from 60 GB to
-150 GB). Second, and sharper: when the hot structure doesn't fit in memory, a
-latency benchmark measures *cache state* as much as algorithm, and cache state is
-nondeterministic across runs. You have to decide which number you want — warm-cache
-steady state (warm deliberately and report it) or cold-cache worst case (measure it
-on purpose) — because the average of "whatever the cache happened to hold" is just
-noise wearing a decimal point.
+It was wrong. probes=100 at lists=5000 reproduced at ~14 s *after* the warm-up, so
+I finally ran `EXPLAIN (ANALYZE, BUFFERS)` on the real query form (a bound vector
+parameter, as the harness passes it). The plan was a **Parallel Seq Scan** — the
+planner had abandoned the IVFFlat index entirely. pgvector's IVFFlat index-scan
+cost estimate grows with `probes`; by probes=100 it exceeded the parallel seq-scan
+cost, so Postgres "helpfully" chose brute force. Forced with `enable_seqscan =
+off`, the identical query is a **755 ms index scan** — ~19× faster than the plan
+the optimizer picked on its own. The cliff wasn't the cache; it was the planner.
 
-Takeaway: above the memory line, control the cache explicitly or your latency
-numbers are a coin flip. And size storage for indexes, which can exceed the table.
+The meta-lesson is the sharp one. I reasoned to a confident, wrong cause, and a
+partial "fix" that nudged some numbers the right way *reinforced* the error instead
+of exposing it — a mechanism consistent with half the evidence is not a diagnosis.
+The query plan is ground truth for what the database actually did, and it was one
+command away the whole time. When a measurement breaks monotonicity or smells like
+a different code path, get the plan (or the profile, or the syscall trace) before
+theorizing — and be extra suspicious when a fix only *sort of* helps.
+
+Two real residues survive the correction: an ANN index really can be **larger than
+its table** (pgvector re-stores every vector, with page overhead), so capacity
+planning must budget table + index(es) + build temp — that pressure is what forced
+the 60→150 GB disk bump. And the planner fallback is itself a production-grade
+pgvector gotcha: at high `probes` on a large table, default settings silently give
+you brute-force latency, so a benchmark of "the index" has to force the index, and
+a deployment has to watch for the same fallback.
+
+Takeaway: don't narrate a cause for a surprising number — measure what actually ran.
+A plausible mechanism that matches some of the data is exactly how a wrong
+explanation gets comfortable.
 
 ## 10. Index knobs trade on different cost axes — and the rule of thumb sits at the knee
 
