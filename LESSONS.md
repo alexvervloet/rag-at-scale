@@ -234,3 +234,37 @@ Takeaway: before tuning an index parameter for speed, work out which cost axis i
 actually on. `lists` and `probes` look like two speed knobs; one is really a
 build-time/memory knob whose query effect cancels out at matched recall. Measuring
 at *matched quality* (not at fixed settings) is what exposes which knob does what.
+
+## 11. Synthetic data doesn't just flatter — it can invert which algorithm wins
+
+§8 warned that synthetic data flatters approximate search. Phase 3 showed the
+nastier half: the *same* corpus that made IVFFlat look perfect (recall 1.0) made
+HNSW look broken (recall 0.63 at ef_search=200, and a hard ceiling of **0.77 even
+at ef_search=1000**). On real data HNSW normally *beats* IVFFlat on the
+recall/latency frontier; here the ranking flipped, and a naive phase-3 table would
+have "proven" the exact opposite of the truth.
+
+The cause is the corpus's degenerate geometry. The seeded generator emits a handful
+of near-identical templates per topic, so a query's true top-10 sit at almost
+identical distances (0.338–0.339) with a crowd of near-ties just beyond. IVFFlat
+scans whole cells exhaustively, so ties are harmless — it always finds them.
+HNSW's greedy graph walk, tuned to descend toward *a* nearest region, gets trapped
+among the near-equal vectors and never visits the specific ones the exact tie-break
+picked. Cranking `ef_search` to its max recovered some of it (0.63 → 0.77) but
+couldn't break the ceiling, because the limitation is baked into the *graph*, and
+the graph is only as discriminating as the geometry it was built on. (A distance-
+based recall would be kinder — 63/100 queries were distance-perfect at ef_search
+1000 — but 37 had genuine misses up to 0.097, so it isn't purely a tie artifact.)
+
+The decision that follows is the real lesson: when the *data*, not the code, is
+what's failing a comparison, do not spend hours tuning the code. I could have
+burned 2–3 hours per higher-`m`/`ef_construction` build chasing HNSW recall on a
+corpus that fundamentally can't support the comparison. The right move is to fix
+the input — swap in a real corpus with realistic neighborhood structure — and only
+then compare algorithms.
+
+Takeaway: a benchmark's data can decide its winner. If a well-regarded method posts
+absurd numbers, suspect the corpus before the method — and a diagnostic that
+separates "wrong answer" from "different-but-equivalent answer" (compare by
+distance, not just id) tells you which. Validate the *fixture* before you trust any
+ranking it produces.
