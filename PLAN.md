@@ -34,14 +34,61 @@ motivation for the ANN indexes in phase 2.
 
 ## Phase 2 — IVFFlat (done when the recall/latency curve exists)
 
-Build IVFFlat at 1M+ vectors. Sweep `lists` (index build knob) and `probes`
-(query knob) and measure against phase 1's exact results.
+IVFFlat at **5M vectors** (voyage-4, 1024-d), recall@10 vs phase-1 exact results.
+`lists` brackets the two rules of thumb: √N ≈ 2236 and N/1000 = 5000. Index is 38 GB
+regardless of lists (it re-stores every vector). Latency **forces the index**
+(`enable_seqscan=off`) so we measure IVFFlat, not the planner fallback (see below);
+lists=1000/5000 re-measured forced, lists=2236 from the initial sweep (verified
+fallback-free).
 
 | lists | probes | recall@10 | p50 | p95 | build time |
 |---|---|---|---|---|---|
+| 1000 | 1 | 0.809 | 11ms | 22ms | 637s |
+| 1000 | 5 | 1.000 | 39ms | 67ms | 637s |
+| 1000 | 10 | 1.000 | 110ms | 181ms | 637s |
+| 1000 | 20 | 1.000 | 230ms | 359ms | 637s |
+| 1000 | 50 | 1.000 | 603ms | 941ms | 637s |
+| 1000 | 100 | 1.000 | 1640ms | 2448ms | 637s |
+| 2236 | 1 | 0.523 | 7ms | 24ms | 1260s |
+| 2236 | 5 | 0.982 | 23ms | 50ms | 1260s |
+| 2236 | 10 | 1.000 | 47ms | 85ms | 1260s |
+| 2236 | 20 | 1.000 | 105ms | 198ms | 1260s |
+| 2236 | 50 | 1.000 | 289ms | 436ms | 1260s |
+| 2236 | 100 | 1.000 | 602ms | 862ms | 1260s |
+| 5000 | 1 | 0.418 | 6ms | 9ms | 2959s |
+| 5000 | 5 | 0.896 | 13ms | 22ms | 2959s |
+| 5000 | 10 | 0.984 | 19ms | 28ms | 2959s |
+| 5000 | 20 | 1.000 | 37ms | 51ms | 2959s |
+| 5000 | 50 | 1.000 | 135ms | 201ms | 2959s |
+| 5000 | 100 | 1.000 | 269ms | 379ms | 2959s |
 
-Questions to answer in writing: where is the knee of the recall/latency curve?
-What does the `lists ≈ sqrt(N)` rule of thumb actually buy?
+**IVFFlat vs brute force:** every config reaches recall@10 = 1.0 at ~40ms, versus
+phase-1's **14,308ms** exact scan — a **~350× speedup at perfect recall**. This is
+the payoff the phase-1 cliff was setting up.
+
+**Where's the knee?** Recall climbs fast then saturates: for √N it's 0.52 → 0.98 →
+1.0 across probes 1 → 5 → 10, and latency is linear in probes. The knee is ~probes
+where recall first hits ~1.0 (probes=10 at √N, 47ms) — past it you pay latency for
+zero recall gain. (Caveat: the synthetic corpus is very clusterable, so recall
+saturates unrealistically early — real data needs a gentler curve; phase 4.)
+
+**What does `lists ≈ √N` buy?** Less than the rule implies — for *query* speed,
+almost nothing here. At matched recall (1.0) the latency is roughly flat across
+lists — 39ms (lists=1000) ≈ 37ms (lists=5000) — because reaching a given recall
+means scanning a roughly constant number of candidates (~20–25k vectors), and
+`lists` just repartitions them: finer cells need proportionally more probes. What
+`lists` *does* move, steeply, is **build time: 637s → 1260s → 2959s** (10.6 → 21 →
+49 min). So on this data lists=1000 built 5× faster than lists=5000 for identical
+query performance. `probes` is the recall/latency knob; `lists` is mostly a
+build-cost decision, and √N is a safe middle rather than a query-speed win.
+
+**Gotcha — the planner abandons the index at high probes.** With default settings,
+pgvector's IVFFlat index-scan cost estimate grows with `probes` and, past a
+threshold, the planner picks a parallel seq scan instead — silently giving you
+brute-force latency (probes=100 at lists=5000: **14.3s** as a seq scan vs **269ms**
+forced with `enable_seqscan=off`). A "using the index" assumption is not safe at
+scale; check `EXPLAIN` or force the index. (This is what produced two bogus ~14s
+rows in the first sweep — see LESSONS #9.)
 
 ## Phase 3 — HNSW (done when the comparison table exists)
 
