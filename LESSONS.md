@@ -205,19 +205,32 @@ Takeaway: don't narrate a cause for a surprising number — measure what actuall
 A plausible mechanism that matches some of the data is exactly how a wrong
 explanation gets comfortable.
 
-## 10. Index knobs trade on different cost axes — and the rule of thumb sits at the knee
+## 10. `lists` is a build-time decision, not a query-speed knob — at matched recall it barely moves latency
 
-Sweeping `lists` at 5M made the tradeoff concrete. More lists means smaller, finer
-cells: query latency at matched recall dropped (recall-1.0 latency went 68 ms →
-47 ms → 41 ms across lists = 1000 → 2236 → 5000), but build time went the other way
-and *harder* — 10.5 min → 21 min → 49 min. The two knobs don't live on the same
-axis: `lists` is paid mostly at build time (k-means over the whole corpus),
-`probes` mostly at query time (cells scanned per query). And the classic
-`lists ≈ sqrt(N)` (2236 at 5M) landed right at the knee: it got essentially all the
-query-latency benefit (47 ms), while pushing on to `N/1000` (5000) shaved a mere
-6 ms off queries for **more than double** the build time — a plainly bad trade.
+The intuitive story about IVFFlat's `lists` is "more, smaller cells = faster
+queries." Sweeping it at 5M (with the index forced, per §9) says otherwise. At
+**matched recall (1.0)** the query latency is essentially flat across `lists`:
+39 ms at lists=1000 (probes=5) vs 37 ms at lists=5000 (probes=20) — the extremes
+are within a couple milliseconds. What *does* change, steeply, is **build time:
+637 s → 1260 s → 2959 s** (10.6 → 21 → 49 min) as lists goes 1000 → 2236 → 5000.
 
-Takeaway: don't tune index parameters as if they share one cost. Separate the
-build-time knobs from the query-time knobs, measure each on its own axis, and note
-that the well-known heuristic is usually a knee, not a magic value — worth beating
-only when one axis is far cheaper than the other for your workload.
+The reason is mechanical and worth internalizing: reaching a target recall means
+examining a roughly fixed number of candidate vectors (~20–25k here for recall 1.0),
+and `lists` only *repartitions* those candidates. Finer cells hold fewer vectors
+each, so you must probe proportionally more of them to scan the same candidate
+count — `probes` rises from 5 → 10 → 20 exactly as cell size falls. The product
+(probes × cell size) ≈ constant, so the work per query at matched recall is
+constant. `probes` is the real recall/latency dial; `lists` mostly buys you *build
+cost*. On this data lists=1000 built 5× faster than lists=5000 for identical query
+performance, which makes `lists ≈ sqrt(N)` a safe default but not a query-speed win
+— and pushing past it strictly wasteful.
+
+(Caveat per §8: the synthetic corpus saturates recall early, so the exact numbers
+flatter IVFFlat; on real data more cells may help separate crowded neighborhoods.
+But the mechanism — candidates-scanned sets both recall and latency, `lists` just
+repartitions — is general.)
+
+Takeaway: before tuning an index parameter for speed, work out which cost axis it's
+actually on. `lists` and `probes` look like two speed knobs; one is really a
+build-time/memory knob whose query effect cancels out at matched recall. Measuring
+at *matched quality* (not at fixed settings) is what exposes which knob does what.
