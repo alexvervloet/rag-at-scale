@@ -159,8 +159,10 @@ IVFFlat mechanics; the 5M-vs-500k gap is a scale caveat, not a different conclus
       throughput plateaus (~4550 qps). Classic queueing: throughput maxes near the
       core count, and past that you buy latency, not QPS. (Warm the index first — a
       cold 3.9GB index makes the first level measure disk, not concurrency.)
-- [ ] Write "RAG at 5M documents — what actually breaks" with the tables and
-      one graph per phase
+- [x] Write "RAG at 5M documents — what actually breaks" with the tables and
+      one graph per phase — [WRITEUP.md](WRITEUP.md) + a
+      [visual version](https://claude.ai/code/artifact/d0e5e9b4-97de-4f43-9805-7c1a1f1dc46c)
+      (a chart per phase)
 
 ## Notes / gotchas discovered along the way
 
