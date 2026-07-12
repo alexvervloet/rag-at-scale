@@ -10,7 +10,10 @@ the same load/ground-truth machinery. Queries come from the *validation* split, 
 they're real held-out text, never a corpus row.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from typing import cast
+
+from datasets import load_dataset
 
 WIKI_DATASET = ("Salesforce/wikitext", "wikitext-103-raw-v1")
 MIN_CHARS = 200   # skip fragments/stubs
@@ -18,9 +21,8 @@ CHUNK_CHARS = 800  # ~150-200 tokens per chunk
 
 
 def _chunks(split: str) -> Iterator[tuple[str, str]]:
-    from datasets import load_dataset
-
-    ds = load_dataset(*WIKI_DATASET, split=split)
+    # load_dataset's return type is a broad union; rows here are {"text": str}.
+    ds = cast(Iterable[dict[str, str]], load_dataset(*WIKI_DATASET, split=split))
     title = "unknown"
     for row in ds:
         t = row["text"].strip()

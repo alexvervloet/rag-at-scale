@@ -36,7 +36,8 @@ def generate(n: int, seed: int = 42) -> Iterator[tuple[str, str]]:
     exactly once across the whole phase-1 sweep.
     """
     if CORPUS_SOURCE == "wiki":
-        from . import corpus_wiki
+        from . import corpus_wiki  # deferred: pulls in HF datasets, not needed for synthetic
+
         yield from corpus_wiki.generate(n, seed)
         return
     rng = random.Random(seed)
@@ -68,7 +69,8 @@ def generate_queries(n: int = 100, seed: int = 1234) -> list[str]:
     """Deterministic held-out query set — the same 100 questions every run, so
     phase 1's exact results and later phases' indexed results are comparable."""
     if CORPUS_SOURCE == "wiki":
-        from . import corpus_wiki
+        from . import corpus_wiki  # deferred: pulls in HF datasets, not needed for synthetic
+
         return corpus_wiki.generate_queries(n, seed)
     rng = random.Random(seed)
     topics = list(TOPICS)
