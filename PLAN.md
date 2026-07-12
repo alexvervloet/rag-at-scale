@@ -145,7 +145,20 @@ IVFFlat mechanics; the 5M-vs-500k gap is a scale caveat, not a different conclus
 - [x] Swap synthetic corpus for a Wikipedia slice; re-verify one table
       (done early in phase 3 — the synthetic geometry broke the ANN comparison,
       so the IVFFlat/HNSW head-to-head was rerun on real wikitext-103 @ 500k)
-- [ ] Concurrency: 10/50 simultaneous queries (locust or asyncio) — does p95 hold?
+- [x] Concurrency: 10/50 simultaneous queries (asyncio/threads) — does p95 hold?
+      Threads on their own connections hit the live HNSW index (500k wiki, ef_search=40):
+
+      | concurrency | p50 | p95 | p99 | throughput |
+      |---|---|---|---|---|
+      | 1 | 1.3ms | 2.1ms | 2.2ms | 669 qps |
+      | 10 | 1.9ms | 3.0ms | 4.8ms | 3850 qps |
+      | 50 | 7.0ms | 22.8ms | 35.3ms | 4551 qps |
+
+      p95 holds (~3ms) through concurrency=10 while throughput scales ~5.7×; at 50 it
+      degrades *gracefully* (p95 23ms, no collapse) as the 12-vCPU VM saturates and
+      throughput plateaus (~4550 qps). Classic queueing: throughput maxes near the
+      core count, and past that you buy latency, not QPS. (Warm the index first — a
+      cold 3.9GB index makes the first level measure disk, not concurrency.)
 - [ ] Write "RAG at 5M documents — what actually breaks" with the tables and
       one graph per phase
 
