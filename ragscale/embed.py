@@ -48,15 +48,15 @@ def _embed_voyage(
     headers = {"Authorization": f"Bearer {VOYAGE_API_KEY}"}
     for attempt in range(retries):
         resp = requests.post(VOYAGE_URL, json=payload, headers=headers, timeout=300)
-        if resp.status_code == 429 or resp.status_code >= 500:
+        transient = resp.status_code == 429 or resp.status_code >= 500
+        if transient and attempt < retries - 1:
             time.sleep(min(2**attempt, 30))  # backoff on rate limit / transient error
             continue
-        resp.raise_for_status()
+        resp.raise_for_status()  # on the final attempt this surfaces the last error
         # Voyage tags each embedding with its input index; sort to guarantee order.
         data = sorted(resp.json()["data"], key=lambda d: d["index"])
         return [d["embedding"] for d in data]
-    resp.raise_for_status()  # out of retries — surface the last error
-    raise RuntimeError("unreachable")
+    raise ValueError(f"retries must be >= 1, got {retries}")
 
 
 _PROVIDERS = {"ollama": _embed_ollama, "voyage": _embed_voyage}
