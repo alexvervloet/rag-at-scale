@@ -1,0 +1,9 @@
+{
+  "include": ["ragscale", "check_setup.py"],
+  "exclude": ["**/__pycache__", ".venv"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "standard",
+  "reportUnusedImport": "error"
+}
