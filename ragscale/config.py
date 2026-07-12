@@ -15,6 +15,9 @@ load_dotenv()
 
 PG_DSN = os.getenv("PG_DSN", "postgresql://rag:rag@localhost:5433/ragscale")
 
+# Where every phase writes its CSVs / ground-truth JSON.
+RESULTS_DIR = os.getenv("RESULTS_DIR", "results")
+
 # Corpus: "synthetic" (deterministic generator) or "wiki" (real wikitext-103).
 # Real data is required for an honest ANN comparison — see LESSONS #11.
 CORPUS_SOURCE = os.getenv("CORPUS_SOURCE", "synthetic")

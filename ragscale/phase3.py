@@ -17,14 +17,12 @@ import os
 import time
 
 from . import corpus, db
-from .config import CORPUS_SOURCE
+from .config import CORPUS_SOURCE, RESULTS_DIR
 from .embed import embed_batch
 from .phase2 import load_ground_truth, measure, recall_at_k
 
-RESULTS_DIR = "results"
 
-
-def record(row: dict, csv_name: str = None) -> None:
+def record(row: dict, csv_name: str | None = None) -> None:
     os.makedirs(RESULTS_DIR, exist_ok=True)
     path = os.path.join(RESULTS_DIR, csv_name or f"phase3_{CORPUS_SOURCE}.csv")
     is_new = not os.path.exists(path)
@@ -54,9 +52,9 @@ def main() -> None:
     efs_vals = [int(x) for x in args.ef_search.split(",")]
 
     conn = db.connect()
-    conn.execute(f"SET maintenance_work_mem = '{args.maintenance_mem}'")
+    db.set_maintenance_mem(conn, args.maintenance_mem)
     conn.execute("SET enable_seqscan = off")  # force the index (see phase 2 / LESSONS #9)
-    n = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+    n = db.scalar(conn, "SELECT count(*) FROM chunks")
     truth = load_ground_truth(n)
     qvecs = embed_batch(corpus.generate_queries(100), input_type="query")
     print(f"phase 3: HNSW on {n} vectors, {len(truth)} queries, k={args.k}\n")
@@ -69,9 +67,7 @@ def main() -> None:
                 t0 = time.perf_counter()
                 db.create_hnsw(conn, m=m, ef_construction=efc)
                 build_s = time.perf_counter() - t0
-            size = conn.execute(
-                "SELECT pg_size_pretty(pg_relation_size('chunks_hnsw'))"
-            ).fetchone()[0]
+            size = db.scalar(conn, "SELECT pg_size_pretty(pg_relation_size('chunks_hnsw'))")
             print(f"m={m} ef_construction={efc}: "
                   f"{'(existing)' if args.measure_only else f'built in {build_s:.1f}s'}, index {size}")
 

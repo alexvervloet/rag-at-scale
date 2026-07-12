@@ -18,12 +18,11 @@ import os
 import time
 
 import numpy as np
+import psycopg
 
 from . import corpus, db
-from .config import CORPUS_SOURCE
+from .config import CORPUS_SOURCE, RESULTS_DIR
 from .embed import embed_batch
-
-RESULTS_DIR = "results"
 
 
 def load_ground_truth(n: int) -> list[list[int]]:
@@ -37,7 +36,9 @@ def recall_at_k(got: list[list[int]], truth: list[list[int]], k: int) -> float:
     return sum(scores) / len(scores)
 
 
-def measure(conn, qvecs, k: int, repeats: int):
+def measure(
+    conn: psycopg.Connection, qvecs, k: int, repeats: int
+) -> tuple[float, float, list[list[int]]]:
     """Return (p50_ms, p95_ms, topk_ids). Ids captured on the first repeat.
 
     At 5M the index (38 GB) exceeds RAM, so a single warmup query isn't enough —
@@ -59,7 +60,7 @@ def measure(conn, qvecs, k: int, repeats: int):
     return float(np.percentile(arr, 50)), float(np.percentile(arr, 95)), ids
 
 
-def record(row: dict, csv_name: str = None) -> None:
+def record(row: dict, csv_name: str | None = None) -> None:
     os.makedirs(RESULTS_DIR, exist_ok=True)
     path = os.path.join(RESULTS_DIR, csv_name or f"phase2_{CORPUS_SOURCE}.csv")
     is_new = not os.path.exists(path)
@@ -90,13 +91,13 @@ def main() -> None:
     conn = db.connect()
     # IVFFlat's k-means needs more working memory than the server default at this
     # scale; raise it for this session (build-time only, does not affect queries).
-    conn.execute(f"SET maintenance_work_mem = '{args.maintenance_mem}'")
+    db.set_maintenance_mem(conn, args.maintenance_mem)
     # Force the index. pgvector's IVFFlat cost estimate grows with probes; past a
     # threshold the planner picks a parallel seq scan (brute force, ~14s at 5M)
     # instead of the index — so without this we'd measure the fallback, not IVFFlat.
     # The fallback itself is a real gotcha (see LESSONS); here we characterize the index.
     conn.execute("SET enable_seqscan = off")
-    n = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+    n = db.scalar(conn, "SELECT count(*) FROM chunks")
     truth = load_ground_truth(n)
     qvecs = embed_batch(corpus.generate_queries(100), input_type="query")
     print(f"phase 2: IVFFlat on {n} vectors, {len(truth)} queries, k={args.k}\n")
@@ -108,9 +109,7 @@ def main() -> None:
             t0 = time.perf_counter()
             db.create_ivfflat(conn, lists)
             build_s = time.perf_counter() - t0
-        size = conn.execute(
-            "SELECT pg_size_pretty(pg_relation_size('chunks_ivfflat'))"
-        ).fetchone()[0]
+        size = db.scalar(conn, "SELECT pg_size_pretty(pg_relation_size('chunks_ivfflat'))")
         print(f"lists={lists}: {'(existing)' if args.measure_only else f'built in {build_s:.1f}s'}, index {size}")
 
         for probes in probes_vals:

@@ -19,13 +19,12 @@ import os
 import time
 
 import numpy as np
+import psycopg
 from tqdm import tqdm
 
 from . import corpus, db
-from .config import CORPUS_SOURCE
+from .config import CORPUS_SOURCE, RESULTS_DIR
 from .embed import embed_batch, embed_iter
-
-RESULTS_DIR = "results"
 
 # A tiny human-readable sanity set, kept separate from the 100 generated
 # held-out queries used for the actual latency/recall numbers.
@@ -36,13 +35,13 @@ SANITY_QUERIES = [
 ]
 
 
-def load_corpus(conn, n: int, fresh: bool) -> float:
+def load_corpus(conn: psycopg.Connection, n: int, fresh: bool) -> float:
     """Ensure the table holds n chunks, embedding+loading only the new rows.
 
     Returns wall-clock seconds spent on this step's load (0.0 if nothing to do).
     """
     db.create_schema(conn, fresh=fresh)
-    existing = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+    existing = db.scalar(conn, "SELECT count(*) FROM chunks")
     if existing >= n:
         print(f"table already has {existing} rows — nothing to add for n={n}")
         return 0.0
@@ -68,7 +67,9 @@ def load_corpus(conn, n: int, fresh: bool) -> float:
     return dt
 
 
-def bench_exact(conn, qvecs, k: int, repeats: int):
+def bench_exact(
+    conn: psycopg.Connection, qvecs, k: int, repeats: int
+) -> tuple[float, float, int, list[list[int]]]:
     """Measure latency AND capture the exact top-k ids in one pass.
 
     A brute-force scan at 5M is ~seconds per query, so scanning the table a
@@ -107,12 +108,10 @@ def record(n: int, load_s: float, size: str, p50: float, p95: float, ground_trut
     print(f"\nPLAN.md row → | {n} | {load_s:.1f}s | {size} | {p50:.1f}ms | {p95:.1f}ms |")
 
 
-def run_point(conn, n: int, k: int, repeats: int, fresh: bool) -> None:
+def run_point(conn: psycopg.Connection, n: int, k: int, repeats: int, fresh: bool) -> None:
     load_s = load_corpus(conn, n, fresh)
-    actual = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
-    size = conn.execute(
-        "SELECT pg_size_pretty(pg_total_relation_size('chunks'))"
-    ).fetchone()[0]
+    actual = db.scalar(conn, "SELECT count(*) FROM chunks")
+    size = db.scalar(conn, "SELECT pg_size_pretty(pg_total_relation_size('chunks'))")
     print(f"\ncorpus: {actual} chunks, table size {size}")
 
     print("\n--- exact search (no index = ground truth) ---")

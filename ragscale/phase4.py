@@ -11,22 +11,21 @@ Runs against whatever index is live (HNSW here); forces the index like phases 2â
 """
 
 import argparse
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
 from . import corpus, db
-from .config import CORPUS_SOURCE
+from .config import CORPUS_SOURCE, RESULTS_DIR
 from .embed import embed_batch
-
-RESULTS_DIR = "results"
 
 
 def worker(qvecs, k: int, ef_search: int, n_queries: int) -> list[float]:
     conn = db.connect()
     conn.execute("SET enable_seqscan = off")
-    conn.execute(f"SET hnsw.ef_search = {ef_search}")
+    db.set_ef_search(conn, ef_search)
     db.search(conn, qvecs[0], k=k)  # warm this connection
     lat = []
     for i in range(n_queries):
@@ -39,9 +38,6 @@ def worker(qvecs, k: int, ef_search: int, n_queries: int) -> list[float]:
 
 
 def main() -> None:
-    import json
-    import os
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--concurrency", type=str, default="1,10,50")
     parser.add_argument("--per-thread", type=int, default=200, help="queries per worker")
@@ -58,7 +54,7 @@ def main() -> None:
     # container restart); otherwise the first level measures disk, not concurrency.
     warm = db.connect()
     warm.execute("SET enable_seqscan = off")
-    warm.execute(f"SET hnsw.ef_search = {args.ef_search}")
+    db.set_ef_search(warm, args.ef_search)
     for _ in range(3):
         for qv in qvecs:
             db.search(warm, qv, k=args.k)
