@@ -9,6 +9,8 @@ Everything below is measured, not asserted. pgvector in Docker, embeddings from
 Voyage (`voyage-4`, 1024-d), one laptop. Raw numbers in `results/`, the full log of
 gotchas in [LESSONS.md](LESSONS.md), the phase definitions in [PLAN.md](PLAN.md).
 
+📊 **[Visual version — a chart per phase](https://claude.ai/code/artifact/d0e5e9b4-97de-4f43-9805-7c1a1f1dc46c)**
+
 ---
 
 ## The setup, and the first thing that broke: the plan to stay free
