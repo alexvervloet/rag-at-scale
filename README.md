@@ -12,7 +12,9 @@ as the corpus grows. See [PLAN.md](PLAN.md) for the phases and the results table
 
 **→ Read the write-up: [WRITEUP.md](WRITEUP.md)** ("RAG at 5M documents — what
 actually breaks") — or the [visual version with a chart per phase](https://claude.ai/code/artifact/d0e5e9b4-97de-4f43-9805-7c1a1f1dc46c).
-The hard-won gotchas live in [LESSONS.md](LESSONS.md).
+The hard-won gotchas live in [LESSONS.md](LESSONS.md). Running it yourself?
+[WALKTHROUGH.md](WALKTHROUGH.md) is the end-to-end journey — every fork in the
+road, what each stage costs, and where this is the wrong tool.
 
 **Two embedding paths.** The database is always pgvector in Docker on this
 machine. For embeddings you pick a provider with `EMBED_PROVIDER`:
